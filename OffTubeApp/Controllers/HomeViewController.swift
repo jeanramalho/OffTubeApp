@@ -10,7 +10,17 @@ import AVFoundation
 class HomeViewController: UIViewController {
     
     private let mainView = HomeView()
-    private let viewModel = VideoListViewModel()
+    private let viewModel: VideoListViewModel
+    
+    // Injeção do ViewModel
+    init(viewModel: VideoListViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não implementado")
+    }
     
     override func loadView() {
         view = mainView
@@ -18,23 +28,31 @@ class HomeViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
         title = "OffTube"
+        navigationController?.navigationBar.barTintColor = .darkBackground
+        navigationController?.navigationBar.titleTextAttributes = [
+            .foregroundColor: UIColor.neonBlue,
+            .font: UIFont.boldSystemFont(ofSize: 20)
+        ]
         view.backgroundColor = .darkBackground
         
-        // Configurar table view
+        // Configurar TableView
         mainView.tableView.dataSource = self
         mainView.tableView.delegate = self
-        mainView.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         
-        // Ações dos botões
+        // Configurar ações dos botões
         mainView.downloadButton.addTarget(self, action: #selector(downloadButtonTapped), for: .touchUpInside)
         mainView.playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         mainView.nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
         mainView.previousButton.addTarget(self, action: #selector(previousTapped), for: .touchUpInside)
         
-        // Callback para atualizar a table view quando a lista mudar
+        // Callbacks do ViewModel para atualizar a UI
         viewModel.onVideosUpdated = { [weak self] in
             self?.mainView.tableView.reloadData()
+        }
+        viewModel.onDownloadError = { errorMsg in
+            print("[ERRO] \(errorMsg)")
         }
         
         // Configurar sessão de áudio para permitir reprodução em background
@@ -47,11 +65,25 @@ class HomeViewController: UIViewController {
     }
     
     @objc private func downloadButtonTapped() {
-        guard let urlText = mainView.urlTextField.text, !urlText.isEmpty else { return }
-        viewModel.downloadVideo(from: urlText) { success in
-            if success {
-                // Opcional: limpar o textField
-                self.mainView.urlTextField.text = ""
+        guard let urlText = mainView.urlTextField.text, !urlText.isEmpty else {
+            print("[DEBUG] URL vazia")
+            return
+        }
+        
+        print("[DEBUG] Iniciando download para URL: \(urlText)")
+        mainView.downloadButton.isEnabled = false
+        mainView.activityIndicator.startAnimating()
+        
+        viewModel.downloadVideo(from: urlText) { [weak self] success in
+            DispatchQueue.main.async {
+                self?.mainView.downloadButton.isEnabled = true
+                self?.mainView.activityIndicator.stopAnimating()
+                if success {
+                    self?.mainView.urlTextField.text = ""
+                    print("[DEBUG] Download concluído com sucesso")
+                } else {
+                    print("[DEBUG] Download falhou")
+                }
             }
         }
     }
@@ -84,18 +116,19 @@ extension HomeViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
 
-         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
-         // Exibe o título do vídeo ou a URL, se o título não estiver disponível
+         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell") ??
+            UITableViewCell(style: .default, reuseIdentifier: "Cell")
+         
+         // Configurar a célula com tema escuro e texto neon
          cell.textLabel?.text = viewModel.videos[indexPath.row].title
          cell.backgroundColor = .darkBackground
-         cell.textLabel?.textColor = .white
+         cell.textLabel?.textColor = .neonBlue
          return cell
     }
     
-    // Ao selecionar um vídeo na lista, inicia a reprodução
+    // Ao selecionar uma célula, inicia a reprodução do vídeo
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
          viewModel.currentIndex = indexPath.row
          viewModel.playCurrentVideo()
     }
 }
-

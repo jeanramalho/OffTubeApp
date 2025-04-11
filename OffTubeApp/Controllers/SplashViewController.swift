@@ -30,12 +30,11 @@ class SplashViewController: UIViewController {
         
         // Transição para Home após 1.5 segundos
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            let homeVC = HomeViewController()
-            let navVC = UINavigationController(rootViewController: homeVC)
-            navVC.modalTransitionStyle = .crossDissolve
-            navVC.modalPresentationStyle = .fullScreen
-            self?.present(navVC, animated: true, completion: nil)
+            let viewModel = VideoListViewModel()
+            let homeVC = HomeViewController(viewModel: viewModel)
+            homeVC.modalTransitionStyle = .crossDissolve
+            homeVC.modalPresentationStyle = .fullScreen
+            self?.navigationController?.setViewControllers([homeVC], animated: true)
         }
     }
 }
-
