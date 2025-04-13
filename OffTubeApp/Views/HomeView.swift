@@ -16,6 +16,10 @@ class HomeView: UIView {
         tf.translatesAutoresizingMaskIntoConstraints = false
         tf.backgroundColor = .white.withAlphaComponent(0.1)
         tf.textColor = .white
+        tf.autocorrectionType = .no
+        tf.autocapitalizationType = .none
+        tf.keyboardType = .URL
+        tf.clearButtonMode = .whileEditing
         return tf
     }()
     
@@ -31,13 +35,33 @@ class HomeView: UIView {
         return btn
     }()
     
-    // Activity Indicator para indicar o download
-    let activityIndicator: UIActivityIndicatorView = {
-        let ai = UIActivityIndicatorView(style: .large)
-        ai.color = .neonBlue
-        ai.translatesAutoresizingMaskIntoConstraints = false
-        ai.hidesWhenStopped = true
-        return ai
+    // Progress View para o download
+    let downloadProgressView: UIProgressView = {
+        let pv = UIProgressView(progressViewStyle: .bar)
+        pv.trackTintColor = .darkGray
+        pv.progressTintColor = .neonBlue
+        pv.translatesAutoresizingMaskIntoConstraints = false
+        pv.isHidden = true
+        return pv
+    }()
+    
+    // Container para exibição do vídeo atual (Picture-in-Picture)
+    let videoContainerView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .black
+        view.clipsToBounds = true
+        view.layer.cornerRadius = 8
+        return view
+    }()
+    
+    // Progress View para o progresso do vídeo
+    let progressView: UIProgressView = {
+        let pv = UIProgressView(progressViewStyle: .bar)
+        pv.trackTintColor = .darkGray
+        pv.progressTintColor = .neonBlue
+        pv.translatesAutoresizingMaskIntoConstraints = false
+        return pv
     }()
     
     // TableView para listar os vídeos baixados
@@ -45,13 +69,25 @@ class HomeView: UIView {
         let tv = UITableView()
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.backgroundColor = .darkBackground
+        tv.separatorStyle = .singleLine
+        tv.separatorColor = .neonBlue.withAlphaComponent(0.3)
+        tv.rowHeight = 80
         return tv
     }()
     
-    // Botões de controle – aumentados
+    // Container para os controles de reprodução
+    let controlsContainerView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .darkBackground
+        view.isHidden = true
+        return view
+    }()
+    
+    // Botões de controle
     let previousButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("◀️", for: .normal)
+        btn.setTitle("⏮", for: .normal)
         btn.titleLabel?.font = UIFont.systemFont(ofSize: 40)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
@@ -60,7 +96,7 @@ class HomeView: UIView {
     
     let playPauseButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("⏯️", for: .normal)
+        btn.setTitle("▶️", for: .normal)
         btn.titleLabel?.font = UIFont.systemFont(ofSize: 50)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
@@ -69,7 +105,7 @@ class HomeView: UIView {
     
     let nextButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("▶️", for: .normal)
+        btn.setTitle("⏭", for: .normal)
         btn.titleLabel?.font = UIFont.systemFont(ofSize: 40)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
@@ -89,11 +125,15 @@ class HomeView: UIView {
     private func setupViews() {
         addSubview(urlTextField)
         addSubview(downloadButton)
-        addSubview(activityIndicator)
+        addSubview(downloadProgressView)
+        addSubview(videoContainerView)
+        addSubview(progressView)
         addSubview(tableView)
-        addSubview(previousButton)
-        addSubview(playPauseButton)
-        addSubview(nextButton)
+        
+        controlsContainerView.addSubview(previousButton)
+        controlsContainerView.addSubview(playPauseButton)
+        controlsContainerView.addSubview(nextButton)
+        addSubview(controlsContainerView)
         
         // Layout utilizando AutoLayout
         NSLayoutConstraint.activate([
@@ -109,19 +149,39 @@ class HomeView: UIView {
             downloadButton.widthAnchor.constraint(equalToConstant: 100),
             downloadButton.heightAnchor.constraint(equalToConstant: 40),
             
-            // Activity indicator centralizado sobre o botão (opcional)
-            activityIndicator.centerXAnchor.constraint(equalTo: downloadButton.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
+            // Progress bar de download abaixo da text field
+            downloadProgressView.topAnchor.constraint(equalTo: urlTextField.bottomAnchor, constant: 8),
+            downloadProgressView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            downloadProgressView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            downloadProgressView.heightAnchor.constraint(equalToConstant: 4),
             
-            // TableView abaixo do text field
-            tableView.topAnchor.constraint(equalTo: urlTextField.bottomAnchor, constant: 16),
+            // Container do vídeo atual
+            videoContainerView.topAnchor.constraint(equalTo: downloadProgressView.bottomAnchor, constant: 16),
+            videoContainerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            videoContainerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            videoContainerView.heightAnchor.constraint(equalToConstant: 200),
+            
+            // Progress bar do vídeo
+            progressView.topAnchor.constraint(equalTo: videoContainerView.bottomAnchor, constant: 4),
+            progressView.leadingAnchor.constraint(equalTo: videoContainerView.leadingAnchor),
+            progressView.trailingAnchor.constraint(equalTo: videoContainerView.trailingAnchor),
+            progressView.heightAnchor.constraint(equalToConstant: 4),
+            
+            // TableView abaixo do player
+            tableView.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 16),
             tableView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             tableView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            tableView.bottomAnchor.constraint(equalTo: previousButton.topAnchor, constant: -16),
+            tableView.bottomAnchor.constraint(equalTo: controlsContainerView.topAnchor, constant: -16),
+            
+            // Container de controles
+            controlsContainerView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            controlsContainerView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            controlsContainerView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            controlsContainerView.heightAnchor.constraint(equalToConstant: 80),
             
             // Botões de controle na parte inferior
-            playPauseButton.centerXAnchor.constraint(equalTo: centerXAnchor),
-            playPauseButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            playPauseButton.centerXAnchor.constraint(equalTo: controlsContainerView.centerXAnchor),
+            playPauseButton.centerYAnchor.constraint(equalTo: controlsContainerView.centerYAnchor),
             playPauseButton.widthAnchor.constraint(equalToConstant: 90),
             playPauseButton.heightAnchor.constraint(equalToConstant: 90),
             

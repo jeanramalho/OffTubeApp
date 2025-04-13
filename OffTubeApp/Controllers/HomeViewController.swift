@@ -6,6 +6,7 @@
 //
 import UIKit
 import AVFoundation
+import AVKit
 
 class HomeViewController: UIViewController {
     
@@ -37,9 +38,13 @@ class HomeViewController: UIViewController {
         ]
         view.backgroundColor = .darkBackground
         
+        // Registrar célula personalizada para a tableView
+        mainView.tableView.register(VideoTableViewCell.self, forCellReuseIdentifier: VideoTableViewCell.reuseIdentifier)
+        
         // Configurar TableView
         mainView.tableView.dataSource = self
         mainView.tableView.delegate = self
+        mainView.tableView.rowHeight = 80
         
         // Configurar ações dos botões
         mainView.downloadButton.addTarget(self, action: #selector(downloadButtonTapped), for: .touchUpInside)
@@ -51,13 +56,27 @@ class HomeViewController: UIViewController {
         viewModel.onVideosUpdated = { [weak self] in
             self?.mainView.tableView.reloadData()
         }
-        viewModel.onDownloadError = { errorMsg in
+        viewModel.onDownloadError = { [weak self] errorMsg in
             print("[ERRO] \(errorMsg)")
+            
+            // Mostrar alerta de erro
+            DispatchQueue.main.async {
+                let alert = UIAlertController(title: "Erro", message: errorMsg, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                self?.present(alert, animated: true)
+            }
         }
         
+        // Observar notificação de vídeo pronto para reprodução
+        NotificationCenter.default.addObserver(self, selector: #selector(videoReadyToPlay), name: Notification.Name("ReadyToPlayVideo"), object: nil)
+        
         // Configurar sessão de áudio para permitir reprodução em background
+        setupAudioSession()
+    }
+    
+    private func setupAudioSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Erro ao configurar AVAudioSession: \(error)")
@@ -66,7 +85,17 @@ class HomeViewController: UIViewController {
     
     @objc private func downloadButtonTapped() {
         guard let urlText = mainView.urlTextField.text, !urlText.isEmpty else {
-            print("[DEBUG] URL vazia")
+            let alert = UIAlertController(title: "URL vazia", message: "Por favor, insira uma URL do YouTube válida", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        
+        // Verifica se a URL é do YouTube
+        guard urlText.contains("youtube.com") || urlText.contains("youtu.be") else {
+            let alert = UIAlertController(title: "URL inválida", message: "Por favor, insira uma URL do YouTube válida", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
             return
         }
         
@@ -88,13 +117,22 @@ class HomeViewController: UIViewController {
         }
     }
     
+    @objc private func videoReadyToPlay() {
+        // Apresenta o AVPlayerViewController quando o vídeo estiver pronto
+        if let playerViewController = viewModel.playerViewController {
+            present(playerViewController, animated: true) {
+                playerViewController.player?.play()
+            }
+        }
+    }
+    
     @objc private func playPauseTapped() {
         if let player = viewModel.player, player.timeControlStatus == .playing {
             viewModel.pausePlayback()
-            mainView.playPauseButton.setTitle("⏸️", for: .normal)
+            mainView.playPauseButton.setTitle("▶️", for: .normal)
         } else {
             viewModel.resumePlayback()
-            mainView.playPauseButton.setTitle("▶️", for: .normal)
+            mainView.playPauseButton.setTitle("⏸️", for: .normal)
         }
     }
     
@@ -104,6 +142,10 @@ class HomeViewController: UIViewController {
     
     @objc private func previousTapped() {
         viewModel.previousVideo()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
@@ -115,20 +157,32 @@ extension HomeViewController: UITableViewDataSource, UITableViewDelegate {
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-
-         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell") ??
-            UITableViewCell(style: .default, reuseIdentifier: "Cell")
-         
-         // Configurar a célula com tema escuro e texto neon
-         cell.textLabel?.text = viewModel.videos[indexPath.row].title
-         cell.backgroundColor = .darkBackground
-         cell.textLabel?.textColor = .neonBlue
-         return cell
+        guard let cell = tableView.dequeueReusableCell(withIdentifier: VideoTableViewCell.reuseIdentifier, for: indexPath) as? VideoTableViewCell else {
+            return UITableViewCell()
+        }
+        
+        let video = viewModel.videos[indexPath.row]
+        cell.configure(with: video)
+        
+        // Carregar thumbnail
+        viewModel.downloadThumbnail(for: video) { image in
+            // Verifica se a célula ainda está visível/válida
+            if let visibleCell = tableView.cellForRow(at: indexPath) as? VideoTableViewCell {
+                visibleCell.setThumbnail(image)
+            }
+        }
+        
+        return cell
+    }
+    
+    // Altura dinâmica para as células
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        return 90
     }
     
     // Ao selecionar uma célula, inicia a reprodução do vídeo
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-         viewModel.currentIndex = indexPath.row
-         viewModel.playCurrentVideo()
+        viewModel.currentIndex = indexPath.row
+        viewModel.playCurrentVideo()
     }
 }
