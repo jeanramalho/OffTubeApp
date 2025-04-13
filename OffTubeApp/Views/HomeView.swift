@@ -112,6 +112,15 @@ class HomeView: UIView {
         return btn
     }()
     
+    // Activity Indicator para mostrar o progresso do download
+    let activityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.color = .neonBlue
+        indicator.hidesWhenStopped = true
+        return indicator
+    }()
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .darkBackground
@@ -129,6 +138,7 @@ class HomeView: UIView {
         addSubview(videoContainerView)
         addSubview(progressView)
         addSubview(tableView)
+        addSubview(activityIndicator)
         
         controlsContainerView.addSubview(previousButton)
         controlsContainerView.addSubview(playPauseButton)
@@ -193,7 +203,11 @@ class HomeView: UIView {
             nextButton.centerYAnchor.constraint(equalTo: playPauseButton.centerYAnchor),
             nextButton.leadingAnchor.constraint(equalTo: playPauseButton.trailingAnchor, constant: 40),
             nextButton.widthAnchor.constraint(equalToConstant: 80),
-            nextButton.heightAnchor.constraint(equalToConstant: 80)
+            nextButton.heightAnchor.constraint(equalToConstant: 80),
+            
+            // Activity Indicator no centro da tela
+            activityIndicator.centerXAnchor.constraint(equalTo: centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
 }

@@ -165,10 +165,18 @@ extension HomeViewController: UITableViewDataSource, UITableViewDelegate {
         cell.configure(with: video)
         
         // Carregar thumbnail
-        viewModel.downloadThumbnail(for: video) { image in
-            // Verifica se a célula ainda está visível/válida
-            if let visibleCell = tableView.cellForRow(at: indexPath) as? VideoTableViewCell {
-                visibleCell.setThumbnail(image)
+        if let thumbnailURL = video.thumbnailURL {
+            viewModel.downloadThumbnail(from: thumbnailURL, videoId: video.id) { success in
+                if success {
+                    // Verifica se a célula ainda está visível/válida
+                    if let visibleCell = tableView.cellForRow(at: indexPath) as? VideoTableViewCell {
+                        let thumbnailPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("\(video.id).jpg")
+                        if let imageData = try? Data(contentsOf: thumbnailPath),
+                           let image = UIImage(data: imageData) {
+                            visibleCell.setThumbnail(image)
+                        }
+                    }
+                }
             }
         }
         

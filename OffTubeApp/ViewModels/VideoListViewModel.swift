@@ -55,142 +55,252 @@ class VideoListViewModel {
     
     // Baixa o vídeo através da API
     func downloadVideo(from videoURL: String, completion: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "\(baseURL)/download") else {
-            onDownloadError?("URL da API inválida.")
+        print("[DEBUG] Iniciando download para URL: \(videoURL)")
+        
+        // Validar URL do YouTube
+        guard let url = URL(string: videoURL),
+              url.host?.contains("youtube.com") == true || url.host?.contains("youtu.be") == true else {
+            print("[ERRO] URL inválida")
             completion(false)
             return
         }
         
-        var request = URLRequest(url: url)
+        // Criar payload
+        let payload = ["url": videoURL]
+        print("Enviando requisição para \(baseURL)/download com payload: \(payload)")
+        
+        // Criar URLRequest
+        guard let requestURL = URL(string: "\(baseURL)/download") else {
+            print("[ERRO] URL inválida")
+            completion(false)
+            return
+        }
+        
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let bodyDict = ["url": videoURL]
+        request.timeoutInterval = 120 // Aumentar timeout para 120 segundos
+        
+        // Configurar cache e política de rede
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.networkServiceType = .responsiveData
         
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: bodyDict, options: [])
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         } catch {
-            onDownloadError?("Erro ao serializar a requisição: \(error.localizedDescription)")
+            print("[ERRO] Erro ao criar payload: \(error)")
             completion(false)
             return
         }
         
-        print("Enviando requisição para \(url.absoluteString) com payload: \(bodyDict)")
+        // Configurar sessão com timeout maior e configurações específicas
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = true
+        config.allowsCellularAccess = true
+        config.allowsConstrainedNetworkAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.connectionProxyDictionary = nil
+        config.tlsMinimumSupportedProtocol = .tlsProtocol12
         
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            if let error = error {
-                print("Erro na rede: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self?.onDownloadError?("Erro de conexão: \(error.localizedDescription)")
+        let session = URLSession(configuration: config)
+        
+        // Implementar sistema de retry
+        var retryCount = 0
+        let maxRetries = 3
+        let retryDelay: TimeInterval = 2.0
+        
+        func attemptDownload() {
+            let task = session.dataTask(with: request) { [weak self] data, response, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("[ERRO] Erro na requisição: \(error)")
+                    
+                    // Tentar novamente se ainda houver tentativas
+                    if retryCount < maxRetries {
+                        retryCount += 1
+                        print("[INFO] Tentativa \(retryCount) de \(maxRetries)")
+                        DispatchQueue.global().asyncAfter(deadline: .now() + retryDelay) {
+                            attemptDownload()
+                        }
+                        return
+                    }
+                    
                     completion(false)
+                    return
                 }
-                return
-            }
-            
-            // Verifica o status HTTP da resposta
-            if let httpResponse = response as? HTTPURLResponse {
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("[ERRO] Resposta inválida")
+                    completion(false)
+                    return
+                }
+                
                 print("Status HTTP: \(httpResponse.statusCode)")
                 
-                if httpResponse.statusCode >= 400 {
-                    DispatchQueue.main.async {
-                        self?.onDownloadError?("Erro HTTP \(httpResponse.statusCode)")
-                        completion(false)
-                    }
+                guard httpResponse.statusCode == 200,
+                      let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let videoURL = json["url"] as? String,
+                      let videoId = json["id"] as? String,
+                      let title = json["title"] as? String,
+                      let thumbnailURL = json["thumbnail"] as? String,
+                      let duration = json["duration"] as? Int else {
+                    print("[ERRO] Resposta inválida da API")
+                    completion(false)
                     return
                 }
-            }
-            
-            // Tenta decodificar a resposta para debug
-            if let data = data, let responseString = String(data: data, encoding: .utf8) {
-                print("Resposta da API: \(responseString)")
-            }
-            
-            // Processa a resposta JSON
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    self?.onDownloadError?("Nenhum dado recebido da API")
-                    completion(false)
+                
+                print("Resposta da API: \(json)")
+                
+                // Baixar vídeo
+                self.downloadVideoFile(from: "\(self.baseURL)\(videoURL)", videoId: videoId) { success in
+                    if success {
+                        // Baixar thumbnail
+                        self.downloadThumbnail(from: "\(self.baseURL)\(thumbnailURL)", videoId: videoId) { thumbnailSuccess in
+                            if thumbnailSuccess {
+                                // Adicionar vídeo à lista
+                                let video = Video(
+                                    id: videoId,
+                                    title: title,
+                                    remoteURL: videoURL,
+                                    thumbnailURL: "\(self.baseURL)\(thumbnailURL)",
+                                    duration: duration,
+                                    localURL: self.getLocalVideoPath(for: videoId)
+                                )
+                                
+                                DispatchQueue.main.async {
+                                    self.videos.append(video)
+                                    completion(true)
+                                }
+                            } else {
+                                completion(false)
+                            }
+                        }
+                    } else {
+                        completion(false)
+                    }
                 }
+            }
+            
+            task.resume()
+        }
+        
+        // Iniciar primeira tentativa
+        attemptDownload()
+    }
+    
+    private func downloadVideoFile(from urlString: String, videoId: String, completion: @escaping (Bool) -> Void) {
+        print("Iniciando download do vídeo de: \(urlString)")
+        
+        guard let url = URL(string: urlString) else {
+            print("[ERRO] URL inválida")
+            completion(false)
+            return
+        }
+        
+        let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("[ERRO] Erro ao baixar vídeo: \(error)")
+                completion(false)
                 return
             }
             
-            do {
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                
-                // Verifica se há mensagem de erro
-                if let errorMsg = json?["error"] as? String {
-                    DispatchQueue.main.async {
-                        self?.onDownloadError?("Erro da API: \(errorMsg)")
-                        completion(false)
-                    }
-                    return
-                }
-                
-                // Extrai informações do vídeo
-                guard let videoPath = json?["url"] as? String,
-                      let id = json?["id"] as? String,
-                      let title = json?["title"] as? String else {
-                    DispatchQueue.main.async {
-                        self?.onDownloadError?("Resposta inválida da API")
-                        completion(false)
-                    }
-                    return
-                }
-                
-                // Cria o objeto de vídeo
-                let thumbnailURL = json?["thumbnail"] as? String
-                let duration = json?["duration"] as? Int ?? 0
-                
-                let video = Video(
-                    id: id,
-                    title: title,
-                    remoteURL: videoPath,
-                    thumbnailURL: thumbnailURL != nil ? "\(self?.baseURL ?? "")\(thumbnailURL!)" : nil,
-                    duration: duration,
-                    localURL: nil
-                )
-                
-                DispatchQueue.main.async {
-                    self?.videos.insert(video, at: 0) // Último no topo
-                    self?.onVideosUpdated?()
-                    completion(true)
-                }
-            } catch {
-                print("Erro ao processar JSON: \(error)")
-                DispatchQueue.main.async {
-                    self?.onDownloadError?("Erro ao processar resposta: \(error.localizedDescription)")
-                    completion(false)
-                }
+            guard let tempURL = tempURL else {
+                print("[ERRO] URL temporária inválida")
+                completion(false)
+                return
             }
-        }.resume()
+            
+            let fileManager = FileManager.default
+            let destinationURL = self.getLocalVideoPath(for: videoId)
+            
+            do {
+                // Remover arquivo existente se houver
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                
+                // Mover arquivo para destino
+                try fileManager.moveItem(at: tempURL, to: destinationURL)
+                print("Vídeo salvo localmente em: \(destinationURL.path)")
+                completion(true)
+            } catch {
+                print("[ERRO] Erro ao salvar vídeo: \(error)")
+                completion(false)
+            }
+        }
+        
+        task.resume()
+    }
+    
+    private func getLocalVideoPath(for videoId: String) -> URL {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent("\(videoId).mp4")
+    }
+    
+    private func getLocalThumbnailPath(for videoId: String) -> URL {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent("\(videoId).jpg")
+    }
+    
+    // Função auxiliar para validar URLs do YouTube
+    private func isValidYouTubeURL(_ urlString: String) -> Bool {
+        let youtubeRegex = "^(https?://)?(www\\.)?(youtube\\.com|youtu\\.be)/.+$"
+        let youtubeTest = NSPredicate(format:"SELF MATCHES %@", youtubeRegex)
+        return youtubeTest.evaluate(with: urlString)
     }
     
     // Método para baixar a thumbnail se disponível
-    func downloadThumbnail(for video: Video, completion: @escaping (UIImage?) -> Void) {
-        guard let thumbnailURLString = video.thumbnailURL,
-              let thumbnailURL = URL(string: thumbnailURLString) else {
-            completion(nil)
+    func downloadThumbnail(from urlString: String, videoId: String, completion: @escaping (Bool) -> Void) {
+        print("Iniciando download da thumbnail de: \(urlString)")
+        
+        guard let url = URL(string: urlString) else {
+            print("[ERRO] URL inválida")
+            completion(false)
             return
         }
         
-        URLSession.shared.dataTask(with: thumbnailURL) { data, _, error in
+        let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, response, error in
+            guard let self = self else { return }
+            
             if let error = error {
-                print("Erro ao baixar thumbnail: \(error)")
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
+                print("[ERRO] Erro ao baixar thumbnail: \(error)")
+                completion(false)
                 return
             }
             
-            if let data = data, let image = UIImage(data: data) {
-                DispatchQueue.main.async {
-                    completion(image)
-                }
-            } else {
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
+            guard let tempURL = tempURL else {
+                print("[ERRO] URL temporária inválida")
+                completion(false)
+                return
             }
-        }.resume()
+            
+            let fileManager = FileManager.default
+            let destinationURL = self.getLocalThumbnailPath(for: videoId)
+            
+            do {
+                // Remover arquivo existente se houver
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                
+                // Mover arquivo para destino
+                try fileManager.moveItem(at: tempURL, to: destinationURL)
+                print("Thumbnail salva localmente em: \(destinationURL.path)")
+                completion(true)
+            } catch {
+                print("[ERRO] Erro ao salvar thumbnail: \(error)")
+                completion(false)
+            }
+        }
+        
+        task.resume()
     }
     
     // Método para iniciar a reprodução de um vídeo a partir do índice atual
