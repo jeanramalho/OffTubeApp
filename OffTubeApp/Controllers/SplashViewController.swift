@@ -28,12 +28,11 @@ class SplashViewController: UIViewController {
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
         
-        // Transição para Home após 1.5 segundos
+        // Transição para Home após 1,5 segundos
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             let viewModel = VideoListViewModel()
             let homeVC = HomeViewController(viewModel: viewModel)
-            homeVC.modalTransitionStyle = .crossDissolve
-            homeVC.modalPresentationStyle = .fullScreen
+            // Substituir a pilha de view controllers para evitar voltar à splash
             self?.navigationController?.setViewControllers([homeVC], animated: true)
         }
     }

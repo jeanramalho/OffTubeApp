@@ -7,118 +7,85 @@
 import UIKit
 
 class VideoTableViewCell: UITableViewCell {
-    static let reuseIdentifier = "VideoTableViewCell"
+    static let reuseIdentifier = "VideoCell"
     
-    // Thumbnail do vídeo
     private let thumbnailImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleAspectFill
-        imageView.clipsToBounds = true
-        imageView.backgroundColor = .darkGray
-        imageView.layer.cornerRadius = 6
-        return imageView
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        iv.layer.cornerRadius = 8
+        return iv
     }()
     
-    // Título do vídeo
     private let titleLabel: UILabel = {
         let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        label.font = UIFont.boldSystemFont(ofSize: 16)
         label.textColor = .neonBlue
         label.numberOfLines = 2
+        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
-    // Duração do vídeo
     private let durationLabel: UILabel = {
         let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = UIFont.systemFont(ofSize: 12)
+        label.font = UIFont.systemFont(ofSize: 14)
         label.textColor = .lightGray
-        return label
-    }()
-    
-    // Status do download
-    private let statusLabel: UILabel = {
-        let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = UIFont.systemFont(ofSize: 12)
-        label.textColor = .systemGreen
         return label
     }()
     
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        setupViews()
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    private func setupViews() {
-        backgroundColor = .darkBackground
-        selectionStyle = .none
-        
-        contentView.addSubview(thumbnailImageView)
-        contentView.addSubview(titleLabel)
-        contentView.addSubview(durationLabel)
-        contentView.addSubview(statusLabel)
-        
-        NSLayoutConstraint.activate([
-            // Thumbnail à esquerda
-            thumbnailImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
-            thumbnailImageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
-            thumbnailImageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
-            thumbnailImageView.widthAnchor.constraint(equalTo: thumbnailImageView.heightAnchor, multiplier: 16/9),
-            
-            // Título à direita do thumbnail
-            titleLabel.leadingAnchor.constraint(equalTo: thumbnailImageView.trailingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            
-            // Duração abaixo do título
-            durationLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            durationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            
-            // Status à direita da duração
-            statusLabel.leadingAnchor.constraint(equalTo: durationLabel.trailingAnchor, constant: 12),
-            statusLabel.centerYAnchor.constraint(equalTo: durationLabel.centerYAnchor)
-        ])
-    }
-    
+    // Configurar a célula com dados do modelo
     func configure(with video: Video) {
         titleLabel.text = video.title
         durationLabel.text = video.formattedDuration
         
-        // Status baseado na disponibilidade local
-        if video.localURL != nil {
-            statusLabel.text = "✓ Disponível offline"
-            statusLabel.textColor = .systemGreen
+        // Tente carregar a thumbnail se o arquivo existir localmente
+        if let thumbnailURL = video.thumbnailURL,
+           let url = URL(string: thumbnailURL) {
+            // Podemos usar URLSession para baixar a imagem. Para simplicidade, vamos baixar de forma síncrona (não ideal para produção)
+            DispatchQueue.global().async { [weak self] in
+                if let data = try? Data(contentsOf: url),
+                   let image = UIImage(data: data) {
+                    DispatchQueue.main.async {
+                        self?.thumbnailImageView.image = image
+                    }
+                }
+            }
         } else {
-            statusLabel.text = "⬇️ Baixando..."
-            statusLabel.textColor = .systemOrange
+            thumbnailImageView.image = nil
         }
-        
-        // Limpa imagem antiga
-        thumbnailImageView.image = nil
-        
-        // Define placeholder enquanto carrega
-        thumbnailImageView.backgroundColor = .darkGray
     }
     
-    func setThumbnail(_ image: UIImage?) {
-        thumbnailImageView.backgroundColor = image == nil ? .darkGray : .clear
-        thumbnailImageView.image = image
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .darkBackground
+        contentView.backgroundColor = .darkBackground
+        setupViews()
     }
     
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        thumbnailImageView.image = nil
-        thumbnailImageView.backgroundColor = .darkGray
-        titleLabel.text = nil
-        durationLabel.text = nil
-        statusLabel.text = nil
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não implementado")
+    }
+    
+    private func setupViews() {
+        contentView.addSubview(thumbnailImageView)
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(durationLabel)
+        
+        NSLayoutConstraint.activate([
+            thumbnailImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+            thumbnailImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            thumbnailImageView.widthAnchor.constraint(equalToConstant: 80),
+            thumbnailImageView.heightAnchor.constraint(equalToConstant: 60),
+            
+            titleLabel.leadingAnchor.constraint(equalTo: thumbnailImageView.trailingAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            
+            durationLabel.leadingAnchor.constraint(equalTo: thumbnailImageView.trailingAnchor, constant: 8),
+            durationLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            durationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4)
+        ])
     }
 }
