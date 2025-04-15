@@ -112,17 +112,15 @@ class VideoListViewModel {
             case .success(let savedURL):
                 print("[DEBUG] Vídeo baixado com sucesso para: \(savedURL.path)")
                 
-                // Atualizar o video com a URL local
-                if let index = self.videos.firstIndex(where: { $0.id == video.id }) {
-                    var updatedVideo = self.videos[index]
-                    updatedVideo.localURL = savedURL
-                    self.videos[index] = updatedVideo
-                    // Adicionar à lista somente após o download bem-sucedido
-                    self.videos.insert(video, at: 0)
-                    self.onVideosUpdated?()
+                DispatchQueue.main.async { // <----- ADICIONE AQUI
+                    // Atualizar o video com a URL local
+                    if let index = self.videos.firstIndex(where: { $0.id == video.id }) {
+                        var updatedVideo = self.videos[index]
+                        updatedVideo.localURL = savedURL
+                        self.videos[index] = updatedVideo
+                        self.onVideosUpdated?() // <----- Garantir que isso rode na main thread
+                    }
                 }
-                
-                
                 completion(true)
                 
             case .failure(let error):

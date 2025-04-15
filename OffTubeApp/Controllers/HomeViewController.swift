@@ -58,7 +58,9 @@ class HomeViewController: UIViewController {
 
         // Define os callbacks do ViewModel: sempre que ele atualizar os vídeos, atualizamos a tabela
         viewModel.onVideosUpdated = { [weak self] in
-            self?.mainView.tableView.reloadData()
+            DispatchQueue.main.async { // <----- ADICIONE AQUI
+                self?.mainView.tableView.reloadData()
+            }
         }
 
         // Callback em caso de erro no download
