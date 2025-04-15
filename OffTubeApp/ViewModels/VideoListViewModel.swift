@@ -39,26 +39,30 @@ class VideoListViewModel {
                 
                 // Lógica para seleção de qualidade e download...
                 if let selectedVideo = self?.selectBestVideo(from: videoResponse.urls) {
-                    // Criar objeto Video
+                    // Criar objeto Video com mais informações
                     let video = Video(
                         id: videoResponse.resourceId,
-                        title: selectedVideo.name,
+                        title: selectedVideo.name != "" ? selectedVideo.name : "Vídeo \(videoResponse.resourceId)",  // Título melhorado
                         remoteURL: selectedVideo.url,
                         thumbnailURL: nil,
                         duration: 0,
                         localURL: nil
                     )
                     
+                    // Adicionar à lista ANTES do download para poder atualizar depois
+                    self?.videos.insert(video, at: 0)
+                    self?.onVideosUpdated?()
+                    
                     // Baixar o vídeo
                     self?.downloadActualVideo(video: video) { success in
-                        DispatchQueue.main.async {
-                            if success {
-                                // Adicionar à lista somente após o download bem-sucedido
-                                self?.videos.insert(video, at: 0)
+                        if success {
+                            // Buscar o vídeo atualizado (com URL local) e atualizar a lista
+                            if let index = self?.videos.firstIndex(where: { $0.id == video.id }) {
+                                // O vídeo estará atualizado com localURL pela função downloadActualVideo
                                 self?.onVideosUpdated?()
                             }
-                            completion(success)
                         }
+                        completion(success)
                     }
                 } else {
                     print("[ERRO] Nenhuma qualidade de vídeo adequada encontrada.")
@@ -113,8 +117,11 @@ class VideoListViewModel {
                     var updatedVideo = self.videos[index]
                     updatedVideo.localURL = savedURL
                     self.videos[index] = updatedVideo
+                    // Adicionar à lista somente após o download bem-sucedido
+                    self.videos.insert(video, at: 0)
                     self.onVideosUpdated?()
                 }
+                
                 
                 completion(true)
                 
@@ -221,10 +228,36 @@ class VideoListViewModel {
     func playCurrentVideo() {
         guard currentIndex < videos.count else { return }
         let video = videos[currentIndex]
-        guard let downloadURL = URL(string: video.remoteURL) else {
-            print("URL inválida para reprodução: \(video.remoteURL)")
+        
+        // Verifica se já existe URL local
+        if let localURL = video.localURL, FileManager.default.fileExists(atPath: localURL.path) {
+            print("[DEBUG] Usando vídeo local já baixado: \(localURL.path)")
+            
+            // Configura o player e inicia a reprodução
+            let player = AVPlayer(url: localURL)
+            self.player = player
+            
+            let playerViewController = AVPlayerViewController()
+            playerViewController.player = player
+            self.playerViewController = playerViewController
+            
+            if AVPictureInPictureController.isPictureInPictureSupported() {
+                playerViewController.allowsPictureInPicturePlayback = true
+            }
+            
+            NotificationCenter.default.post(name: Notification.Name("ReadyToPlayVideo"), object: self)
+            
+            player.play()
             return
         }
+        
+        // Se não existe local, faz o download
+        guard let downloadURL = URL(string: video.remoteURL) else {
+            print("[ERRO] URL inválida para reprodução: \(video.remoteURL)")
+            return
+        }
+        
+        print("[DEBUG] Iniciando download do arquivo para reprodução: \(downloadURL.absoluteString)")
 
         print("Iniciando download do arquivo para reprodução: \(downloadURL.absoluteString)")
         let task = URLSession.shared.downloadTask(with: downloadURL) { [weak self] tempLocalURL, _, error in

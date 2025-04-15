@@ -70,6 +70,11 @@ class HomeViewController: UIViewController {
                 self?.present(alert, animated: true)
             }
         }
+        
+        NotificationCenter.default.addObserver(self,
+                                                  selector: #selector(presentVideoPlayer),
+                                                  name: Notification.Name("ReadyToPlayVideo"),
+                                                  object: nil)
 
         // Permite que o áudio continue tocando com a tela bloqueada ou em segundo plano
         setupAudioSession()
@@ -82,6 +87,12 @@ class HomeViewController: UIViewController {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Erro ao configurar AVAudioSession: \(error)")
+        }
+    }
+    
+    @objc func presentVideoPlayer() {
+        if let playerVC = viewModel.playerViewController {
+            present(playerVC, animated: true)
         }
     }
 
