@@ -33,79 +33,95 @@ class VideoListViewModel {
         print("[DEBUG] Iniciando download para URL: \(videoURL)")
 
         videoService.fetchDownloadLinks(for: videoURL) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let videoResponse):
-                    print("[DEBUG] Resposta da API recebida com sucesso! ID: \(videoResponse.resourceId)")
+            switch result {
+            case .success(let videoResponse):
+                print("[DEBUG] Resposta da API recebida com sucesso! ID: \(videoResponse.resourceId)")
+                
+                // Lógica para seleção de qualidade e download...
+                if let selectedVideo = self?.selectBestVideo(from: videoResponse.urls) {
+                    // Criar objeto Video
+                    let video = Video(
+                        id: videoResponse.resourceId,
+                        title: selectedVideo.name,
+                        remoteURL: selectedVideo.url,
+                        thumbnailURL: nil,
+                        duration: 0,
+                        localURL: nil
+                    )
                     
-                    // Filtrar para encontrar o melhor vídeo com base na qualidade
-                    var selectedVideo: VideoDownloadLink?
-                    var bestMatchQuality = 0
-                    let targetQuality = 720 // Qualidade preferida
-                    
-                    // Primeiro, tente encontrar exatamente 720p
-                    selectedVideo = videoResponse.urls.first(where: { $0.quality == "720" })
-                    
-                    // Se não encontrou 720p, procure a melhor opção
-                    if selectedVideo == nil {
-                        for videoLink in videoResponse.urls {
-                            if let quality = Int(videoLink.quality) {
-                                // Preferência: qualidade mais próxima de 720p para baixo
-                                if quality < targetQuality && quality > bestMatchQuality {
-                                    bestMatchQuality = quality
-                                    selectedVideo = videoLink
-                                }
-                                // Se não tiver nada abaixo de 720p, pegue a menor qualidade acima
-                                else if quality > targetQuality && (selectedVideo == nil || Int(selectedVideo!.quality) ?? 0 > quality) {
-                                    selectedVideo = videoLink
-                                }
+                    // Baixar o vídeo
+                    self?.downloadActualVideo(video: video) { success in
+                        DispatchQueue.main.async {
+                            if success {
+                                // Adicionar à lista somente após o download bem-sucedido
+                                self?.videos.insert(video, at: 0)
+                                self?.onVideosUpdated?()
                             }
+                            completion(success)
                         }
                     }
-                    
-                    // Se ainda não encontrou nada, pegue o primeiro disponível
-                    if selectedVideo == nil && !videoResponse.urls.isEmpty {
-                        selectedVideo = videoResponse.urls.first
-                    }
-                    
-                    // Verifica se encontrou um vídeo selecionado
-                    if let selected = selectedVideo {
-                        let fullDownloadURL: String
-                        if selected.url.hasPrefix("http") {
-                            fullDownloadURL = selected.url
-                        } else {
-                            // Adiciona o host base se for uma URL relativa
-                            fullDownloadURL = "https://youtube-quick-video-downloader-free-api-downlaod-all-video.p.rapidapi.com\(selected.url)"
-                        }
-                        
-                        print("[DEBUG] Video selecionado: \(selected.name) - Qualidade: \(selected.quality)")
-                        print("[DEBUG] URL do download: \(fullDownloadURL)")
-                        
-                        // Cria o objeto Video com os dados recebidos
-                        let video = Video(
-                            id: videoResponse.resourceId,
-                            title: selected.name,
-                            remoteURL: fullDownloadURL,
-                            thumbnailURL: nil,
-                            duration: 0,
-                            localURL: nil
-                        )
-                        
-                        // Insere o vídeo na lista e notifica UI
-                        self?.videos.insert(video, at: 0)
-                        self?.onVideosUpdated?()
-                        completion(true)
-                    } else {
-                        print("[ERRO] Nenhuma qualidade de vídeo adequada encontrada.")
-                        self?.onDownloadError?("Nenhuma qualidade de vídeo adequada encontrada.")
-                        completion(false)
-                    }
-                    
-                case .failure(let error):
-                    print("[ERRO] Falha na API: \(error.localizedDescription)")
-                    self?.onDownloadError?("Erro na solicitação: \(error.localizedDescription)")
+                } else {
+                    print("[ERRO] Nenhuma qualidade de vídeo adequada encontrada.")
+                    self?.onDownloadError?("Nenhuma qualidade de vídeo adequada encontrada.")
                     completion(false)
                 }
+                
+            case .failure(let error):
+                print("[ERRO] Falha na API: \(error.localizedDescription)")
+                self?.onDownloadError?("Erro na solicitação: \(error.localizedDescription)")
+                completion(false)
+            }
+        }
+    }
+
+    // Função auxiliar para selecionar o melhor vídeo
+    private func selectBestVideo(from videos: [VideoDownloadLink]) -> VideoDownloadLink? {
+        guard !videos.isEmpty else { return nil }
+        
+        // Primeiro tenta encontrar 720p
+        if let video720p = videos.first(where: { $0.quality == "720" }) {
+            return video720p
+        }
+        
+        // Se não encontrar 720p, tenta encontrar a qualidade mais próxima
+        let targetQuality = 720
+        let sortedVideos = videos.compactMap { video -> (VideoDownloadLink, Int)? in
+            guard let quality = Int(video.quality) else { return nil }
+            return (video, abs(quality - targetQuality))
+        }.sorted { $0.1 < $1.1 }
+        
+        return sortedVideos.first?.0 ?? videos.first
+    }
+
+    // Função para baixar o vídeo efetivamente
+    private func downloadActualVideo(video: Video, completion: @escaping (Bool) -> Void) {
+        guard let remoteURL = URL(string: video.remoteURL) else {
+            completion(false)
+            return
+        }
+        
+        // Definir local path
+        let localPath = getLocalVideoPath(for: video.id)
+        
+        videoService.downloadVideoFile(from: video.remoteURL, to: localPath) { result in
+            switch result {
+            case .success(let savedURL):
+                print("[DEBUG] Vídeo baixado com sucesso para: \(savedURL.path)")
+                
+                // Atualizar o video com a URL local
+                if let index = self.videos.firstIndex(where: { $0.id == video.id }) {
+                    var updatedVideo = self.videos[index]
+                    updatedVideo.localURL = savedURL
+                    self.videos[index] = updatedVideo
+                    self.onVideosUpdated?()
+                }
+                
+                completion(true)
+                
+            case .failure(let error):
+                print("[ERRO] Falha ao baixar vídeo: \(error.localizedDescription)")
+                self.onDownloadError?("Erro ao baixar vídeo: \(error.localizedDescription)")
+                completion(false)
             }
         }
     }
