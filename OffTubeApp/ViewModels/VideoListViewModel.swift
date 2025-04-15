@@ -21,10 +21,8 @@ class VideoListViewModel {
     // Índice do vídeo atualmente em reprodução
     var currentIndex: Int = 0
 
-    // Informações da API do RapidAPI
-    private let rapidAPIBaseURL = "https://youtube-quick-video-downloader-free-api-downlaod-all-video.p.rapidapi.com"
-    private let rapidAPIKey = "e675e37fe3msh28737c9013eca79p1ed09cjsn7b8a4c446ef0"
-    private let rapidAPIHost = "youtube-quick-video-downloader-free-api-downlaod-all-video.p.rapidapi.com"
+    // Serviço para fazer requisições à API
+    private let videoService = VideoService()
 
     // Callbacks para atualizar UI ou exibir erro
     var onVideosUpdated: (() -> Void)?
@@ -34,132 +32,83 @@ class VideoListViewModel {
     func downloadVideo(from videoURL: String, completion: @escaping (Bool) -> Void) {
         print("[DEBUG] Iniciando download para URL: \(videoURL)")
 
-        // Codifica a URL para uso em query string
-        guard let encodedVideoURL = videoURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            print("[ERRO] Falha ao codificar a URL do vídeo")
-            completion(false)
-            return
-        }
-
-        // Monta o endpoint com a URL codificada
-        let endpoint = "\(rapidAPIBaseURL)/videodownload.php?url=\(encodedVideoURL)"
-        guard let requestURL = URL(string: endpoint) else {
-            print("[ERRO] URL da API RapidAPI inválida: \(endpoint)")
-            completion(false)
-            return
-        }
-
-        // Configura a requisição HTTP com os headers esperados pela RapidAPI
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "GET"
-        request.setValue(rapidAPIKey, forHTTPHeaderField: "x-rapidapi-key")
-        request.setValue(rapidAPIHost, forHTTPHeaderField: "x-rapidapi-host")
-        request.timeoutInterval = 30
-
-        // Inicia a requisição
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        videoService.fetchDownloadLinks(for: videoURL) { [weak self] result in
             DispatchQueue.main.async {
-                // Tratamento de erro de rede
-                if let error = error {
-                    print("[ERRO] Erro na requisição RapidAPI: \(error.localizedDescription)")
-                    self?.onDownloadError?("Erro na requisição RapidAPI: \(error.localizedDescription)")
-                    completion(false)
-                    return
-                }
-
-                // Verifica se veio algum dado
-                guard let data = data else {
-                    print("[ERRO] Resposta vazia da API RapidAPI.")
-                    self?.onDownloadError?("Resposta vazia da API RapidAPI.")
-                    completion(false)
-                    return
-                }
-
-                do {
-                    // Faz o parsing manual da resposta da RapidAPI
-                    guard let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                          let firstItem = json.values.first as? [String: Any],
-                          let resourceId = firstItem["resourceId"] as? String,
-                          let urlsArray = firstItem["urls"] as? [[String: Any]] else {
-                        print("[ERRO] Estrutura de resposta da API RapidAPI inválida.")
-                        self?.onDownloadError?("Estrutura de resposta da API RapidAPI inválida.")
-                        completion(false)
-                        return
-                    }
-
-                    // Filtro para escolher o melhor vídeo com base na qualidade
+                switch result {
+                case .success(let videoResponse):
+                    print("[DEBUG] Resposta da API recebida com sucesso! ID: \(videoResponse.resourceId)")
+                    
+                    // Filtrar para encontrar o melhor vídeo com base na qualidade
                     var selectedVideo: VideoDownloadLink?
                     var bestMatchQuality = 0
-                    var targetQuality = 720 // Qualidade preferida
-
-                    for videoLink in urlsArray {
-                        if let qualityString = videoLink["quality"] as? String,
-                           let quality = Int(qualityString) {
-                            if quality == targetQuality {
-                                selectedVideo = VideoDownloadLink(url: videoLink["url"] as? String ?? "",
-                                                                  name: videoLink["name"] as? String ?? "",
-                                                                  subName: videoLink["subName"] as? String ?? "",
-                                                                  extensionType: videoLink["extension"] as? String ?? "",
-                                                                  quality: qualityString)
-                                break
-                            } else if quality < targetQuality && quality > bestMatchQuality {
-                                bestMatchQuality = quality
-                                selectedVideo = VideoDownloadLink(url: videoLink["url"] as? String ?? "",
-                                                                  name: videoLink["name"] as? String ?? "",
-                                                                  subName: videoLink["subName"] as? String ?? "",
-                                                                  extensionType: videoLink["extension"] as? String ?? "",
-                                                                  quality: qualityString)
-                            } else if quality > targetQuality && (selectedVideo == nil || quality < bestMatchQuality) {
-                                selectedVideo = VideoDownloadLink(url: videoLink["url"] as? String ?? "",
-                                                                  name: videoLink["name"] as? String ?? "",
-                                                                  subName: videoLink["subName"] as? String ?? "",
-                                                                  extensionType: videoLink["extension"] as? String ?? "",
-                                                                  quality: qualityString)
+                    let targetQuality = 720 // Qualidade preferida
+                    
+                    // Primeiro, tente encontrar exatamente 720p
+                    selectedVideo = videoResponse.urls.first(where: { $0.quality == "720" })
+                    
+                    // Se não encontrou 720p, procure a melhor opção
+                    if selectedVideo == nil {
+                        for videoLink in videoResponse.urls {
+                            if let quality = Int(videoLink.quality) {
+                                // Preferência: qualidade mais próxima de 720p para baixo
+                                if quality < targetQuality && quality > bestMatchQuality {
+                                    bestMatchQuality = quality
+                                    selectedVideo = videoLink
+                                }
+                                // Se não tiver nada abaixo de 720p, pegue a menor qualidade acima
+                                else if quality > targetQuality && (selectedVideo == nil || Int(selectedVideo!.quality) ?? 0 > quality) {
+                                    selectedVideo = videoLink
+                                }
                             }
                         }
                     }
-
-                    // Verifique se encontrou um vídeo selecionado
-                    if let selectedVideo = selectedVideo {
+                    
+                    // Se ainda não encontrou nada, pegue o primeiro disponível
+                    if selectedVideo == nil && !videoResponse.urls.isEmpty {
+                        selectedVideo = videoResponse.urls.first
+                    }
+                    
+                    // Verifica se encontrou um vídeo selecionado
+                    if let selected = selectedVideo {
                         let fullDownloadURL: String
-                        if selectedVideo.url.hasPrefix("http") {
-                            fullDownloadURL = selectedVideo.url
+                        if selected.url.hasPrefix("http") {
+                            fullDownloadURL = selected.url
                         } else {
-                            fullDownloadURL = "\(self?.rapidAPIBaseURL ?? "")\(selectedVideo.url)"
+                            // Adiciona o host base se for uma URL relativa
+                            fullDownloadURL = "https://youtube-quick-video-downloader-free-api-downlaod-all-video.p.rapidapi.com\(selected.url)"
                         }
-
-                        print("[DEBUG] Video selecionado: \(selectedVideo.name) - Qualidade: \(selectedVideo.quality)")
-                        print("URL do download: \(fullDownloadURL)")
-
+                        
+                        print("[DEBUG] Video selecionado: \(selected.name) - Qualidade: \(selected.quality)")
+                        print("[DEBUG] URL do download: \(fullDownloadURL)")
+                        
                         // Cria o objeto Video com os dados recebidos
                         let video = Video(
-                            id: resourceId,
-                            title: selectedVideo.name,
+                            id: videoResponse.resourceId,
+                            title: selected.name,
                             remoteURL: fullDownloadURL,
                             thumbnailURL: nil,
                             duration: 0,
                             localURL: nil
                         )
-
+                        
                         // Insere o vídeo na lista e notifica UI
                         self?.videos.insert(video, at: 0)
                         self?.onVideosUpdated?()
                         completion(true)
-
                     } else {
+                        print("[ERRO] Nenhuma qualidade de vídeo adequada encontrada.")
                         self?.onDownloadError?("Nenhuma qualidade de vídeo adequada encontrada.")
                         completion(false)
                     }
-
-                } catch {
-                    print("[ERRO] Falha ao decodificar a resposta da API RapidAPI: \(error.localizedDescription)")
-                    self?.onDownloadError?("Erro ao decodificar resposta: \(error.localizedDescription)")
+                    
+                case .failure(let error):
+                    print("[ERRO] Falha na API: \(error.localizedDescription)")
+                    self?.onDownloadError?("Erro na solicitação: \(error.localizedDescription)")
                     completion(false)
                 }
             }
-        }.resume()
+        }
     }
-
 
     // Faz download real do arquivo de vídeo (de uma URL direta)
     private func downloadVideoFile(from urlString: String, videoId: String, completion: @escaping (Bool) -> Void) {
