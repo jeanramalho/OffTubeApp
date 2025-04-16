@@ -8,35 +8,33 @@ import UIKit
 import AVFoundation
 import AVKit
 
-/// Tela principal que exibe os vídeos baixados e permite baixar novos
+// View Principal
 class HomeViewController: UIViewController {
     
-    private let mainView = HomeView() // View feita com ViewCode, contém TableView e botões
+    private let mainView = HomeView()
     private let viewModel: VideoListViewModel // ViewModel que gerencia os dados e lógica
 
-    /// Inicializa o controlador com um ViewModel injetado (padrão MVVM)
+    // Inicializa o controlador com um ViewModel injetado (padrão MVVM)
     init(viewModel: VideoListViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// Inicializador exigido pelo sistema (não usado no ViewCode, então marcamos como indisponível)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) não implementado")
     }
 
-    /// Substitui a `view` padrão pela `HomeView` construída via código
+    // Substitui a `view` padrão pela `HomeView` construída via código
     override func loadView() {
         view = mainView
     }
 
-    /// Executado quando a view termina de carregar
     override func viewDidLoad() {
         super.viewDidLoad()
         setupDismissKeyboardGesture()
         
         title = "OffTube"
-        view.backgroundColor = .darkBackground // fundo escuro customizado
+        view.backgroundColor = .darkBackground
 
         // Customiza a Navigation Bar com uma pegada neon/tech
         navigationController?.navigationBar.barTintColor = .darkBackground
@@ -89,7 +87,7 @@ class HomeViewController: UIViewController {
         view.addGestureRecognizer(tapGesture)
     }
 
-    /// Configura a sessão de áudio para permitir reprodução em background
+    // Configura a sessão de áudio para permitir reprodução em background
     private func setupAudioSession() {
         do {
             try AVAudioSession.sharedInstance().setCategory(
@@ -109,7 +107,7 @@ class HomeViewController: UIViewController {
         }
     }
 
-    /// Acionado quando o botão de download é tocado
+    // Acionado quando o botão de download é tocado
     @objc private func downloadButtonTapped() {
         guard let urlText = mainView.urlTextField.text, !urlText.isEmpty else {
             showAlert(title: "URL vazia", message: "Por favor, insira uma URL do YouTube válida")
@@ -141,7 +139,7 @@ class HomeViewController: UIViewController {
         }
     }
 
-    /// Alterna entre play e pause no vídeo atual
+    // Alterna entre play e pause no vídeo atual
     @objc private func playPauseTapped() {
         if let player = viewModel.player, player.timeControlStatus == .playing {
             viewModel.pausePlayback()
@@ -152,12 +150,12 @@ class HomeViewController: UIViewController {
         }
     }
 
-    /// Avança para o próximo vídeo
+    // Avança para o próximo vídeo
     @objc private func nextTapped() {
         viewModel.nextVideo()
     }
 
-    /// Volta para o vídeo anterior
+    // Volta para o vídeo anterior
     @objc private func previousTapped() {
         viewModel.previousVideo()
     }
@@ -172,7 +170,7 @@ class HomeViewController: UIViewController {
         }
     }
 
-    /// Exibe um alerta simples
+    // Exibe um alerta simples
     private func showAlert(title: String, message: String) {
         DispatchQueue.main.async { [weak self] in
             let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
