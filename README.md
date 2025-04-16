@@ -56,7 +56,7 @@ Um projeto pessoal desenvolvido de ponta a ponta para resolver um problema real:
 ## 📂 Estrutura do Projeto
 
 Organização profissional seguindo padrões de mercado:
-
+```
 OffTubeApp/
 ├── Controllers/ # Coordenação de fluxos e lifecycle
 ├── ViewModels/ # Lógica de negócios e estados reativos
@@ -64,7 +64,7 @@ OffTubeApp/
 ├── Models/ # Entidades de dados e DTOs
 ├── Service/ # Camada de rede e operações I/O
 └── Resources/ # Assets e configurações locais
-
+```
 
 ## 💡 Destaques Técnicos
 
