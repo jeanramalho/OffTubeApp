@@ -52,8 +52,7 @@ class HomeView: UIView {
     // Botões de controle – maiores
     let previousButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("◀️", for: .normal)
-        btn.titleLabel?.font = UIFont.systemFont(ofSize: 45)
+        btn.setImage(UIImage(named: "prev"), for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
         return btn
@@ -61,8 +60,7 @@ class HomeView: UIView {
     
     let playPauseButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("⏯️", for: .normal)
-        btn.titleLabel?.font = UIFont.systemFont(ofSize: 60)
+        btn.setImage(UIImage(named: "play"), for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
         return btn
@@ -70,8 +68,7 @@ class HomeView: UIView {
     
     let nextButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setTitle("▶️", for: .normal)
-        btn.titleLabel?.font = UIFont.systemFont(ofSize: 45)
+        btn.setImage(UIImage(named: "next"), for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.setTitleColor(.neonBlue, for: .normal)
         return btn

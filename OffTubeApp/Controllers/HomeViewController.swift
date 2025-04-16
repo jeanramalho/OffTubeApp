@@ -33,6 +33,7 @@ class HomeViewController: UIViewController {
     /// Executado quando a view termina de carregar
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupDismissKeyboardGesture()
         
         title = "OffTube"
         view.backgroundColor = .darkBackground // fundo escuro customizado
@@ -80,6 +81,12 @@ class HomeViewController: UIViewController {
 
         // Permite que o áudio continue tocando com a tela bloqueada ou em segundo plano
         setupAudioSession()
+    }
+    
+    private func setupDismissKeyboardGesture() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapOutsideTextField))
+        tapGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(tapGesture)
     }
 
     /// Configura a sessão de áudio para permitir reprodução em background
@@ -138,10 +145,10 @@ class HomeViewController: UIViewController {
     @objc private func playPauseTapped() {
         if let player = viewModel.player, player.timeControlStatus == .playing {
             viewModel.pausePlayback()
-            mainView.playPauseButton.setTitle("▶️", for: .normal)
+            mainView.playPauseButton.setImage(UIImage(named: "play"), for: .normal)
         } else {
             viewModel.resumePlayback()
-            mainView.playPauseButton.setTitle("⏸️", for: .normal)
+            mainView.playPauseButton.setImage(UIImage(named: "pause"), for: .normal)
         }
     }
 
@@ -153,6 +160,16 @@ class HomeViewController: UIViewController {
     /// Volta para o vídeo anterior
     @objc private func previousTapped() {
         viewModel.previousVideo()
+    }
+    
+    // metodo para ocultar teclado ao clicar fora do textfield
+    @objc private func handleTapOutsideTextField(_ gesture: UITapGestureRecognizer) {
+        let tapLocation = gesture.location(in: view)
+        
+        // Verifica se o toque foi fora da área do textField
+        if !mainView.urlTextField.frame.contains(tapLocation) {
+            view.endEditing(true)
+        }
     }
 
     /// Exibe um alerta simples

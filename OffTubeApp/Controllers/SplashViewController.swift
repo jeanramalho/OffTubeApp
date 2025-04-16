@@ -8,24 +8,24 @@ import UIKit
 
 class SplashViewController: UIViewController {
     
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.text = "OffTube"
-        label.font = UIFont.systemFont(ofSize: 40, weight: .bold)
-        label.textColor = .neonBlue
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.textAlignment = .center
-        return label
+    private let logoImageView: UIImageView = {
+        let image = UIImageView()
+        image.translatesAutoresizingMaskIntoConstraints = false
+        image.contentMode = .scaleAspectFit
+        image.image = UIImage(named: "logo")
+        image.clipsToBounds = true
+        return image
     }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .darkBackground
-        view.addSubview(titleLabel)
+        view.addSubview(logoImageView)
         
         NSLayoutConstraint.activate([
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            logoImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            logoImageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            logoImageView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.2),
         ])
         
         // Transição para Home após 1,5 segundos
