@@ -85,7 +85,11 @@ class HomeViewController: UIViewController {
     /// Configura a sessão de áudio para permitir reprodução em background
     private func setupAudioSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .mixWithOthers])
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .moviePlayback,
+                options: [.allowAirPlay, .mixWithOthers, .allowBluetoothA2DP]
+            )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Erro ao configurar AVAudioSession: \(error)")
@@ -163,25 +167,77 @@ class HomeViewController: UIViewController {
 
 extension HomeViewController: UITableViewDataSource, UITableViewDelegate {
     
-    /// Informa à tabela quantos vídeos temos
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return viewModel.videos.count
     }
 
-    /// Cria e configura uma célula com as informações do vídeo
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(withIdentifier: VideoTableViewCell.reuseIdentifier, for: indexPath) as? VideoTableViewCell else {
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: VideoTableViewCell.reuseIdentifier,
+            for: indexPath
+        ) as? VideoTableViewCell else {
             return UITableViewCell()
         }
-
+        
         let video = viewModel.videos[indexPath.row]
-        cell.configure(with: video)
+        let isDownloading = viewModel.downloadingVideoIds.contains(video.id)
+        cell.configure(with: video, isDownloading: isDownloading)
         return cell
     }
 
-    /// Ao tocar num vídeo da lista, inicia a reprodução dele
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         viewModel.currentIndex = indexPath.row
         viewModel.playCurrentVideo()
+    }
+    
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        // Ação de Delete
+        let deleteAction = UIContextualAction(style: .destructive, title: nil) { [weak self] (_, _, completion) in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            let video = self.viewModel.videos[indexPath.row]
+            
+            // Remove do armazenamento
+            if let localURL = video.localURL {
+                do {
+                    try FileManager.default.removeItem(at: localURL)
+                } catch {
+                    print("Erro ao deletar arquivo: \(error)")
+                }
+            }
+            
+            // Remove da lista
+            self.viewModel.removeVideo(at: indexPath.row)
+            tableView.deleteRows(at: [indexPath], with: .automatic)
+            completion(true)
+        }
+        deleteAction.backgroundColor = .systemRed
+        deleteAction.image = UIImage(systemName: "trash")
+        
+        // Ação de Compartilhar
+        let shareAction = UIContextualAction(style: .normal, title: nil) { [weak self] (_, _, completion) in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            let video = self.viewModel.videos[indexPath.row]
+            if let localURL = video.localURL {
+                let activityVC = UIActivityViewController(
+                    activityItems: [localURL],
+                    applicationActivities: nil
+                )
+                self.present(activityVC, animated: true)
+            }
+            completion(true)
+        }
+        shareAction.backgroundColor = .systemBlue
+        shareAction.image = UIImage(systemName: "square.and.arrow.up")
+        
+        // Ordem das ações: Share (direita) -> Delete (esquerda)
+        return UISwipeActionsConfiguration(actions: [deleteAction, shareAction])
     }
 }

@@ -27,34 +27,31 @@ class VideoTableViewCell: UITableViewCell {
         return label
     }()
     
-    private let durationLabel: UILabel = {
-        let label = UILabel()
-        label.font = UIFont.systemFont(ofSize: 14)
-        label.textColor = .lightGray
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }()
+    let activityIndicator: UIActivityIndicatorView = {
+           let ai = UIActivityIndicatorView(style: .medium)
+           ai.color = .neonBlue
+           ai.translatesAutoresizingMaskIntoConstraints = false
+           ai.hidesWhenStopped = true
+           return ai
+       }()
+    
     
     // Configurar a célula com dados do modelo
-    func configure(with video: Video) {
+    func configure(with video: Video, isDownloading: Bool) {
         titleLabel.text = video.title
-        durationLabel.text = video.formattedDuration
         
-        // Tente carregar a thumbnail se o arquivo existir localmente
-        if let thumbnailURL = video.thumbnailURL,
-           let url = URL(string: thumbnailURL) {
-            // Podemos usar URLSession para baixar a imagem. Para simplicidade, vamos baixar de forma síncrona (não ideal para produção)
-            DispatchQueue.global().async { [weak self] in
-                if let data = try? Data(contentsOf: url),
-                   let image = UIImage(data: data) {
-                    DispatchQueue.main.async {
-                        self?.thumbnailImageView.image = image
-                    }
-                }
-            }
+        // Carrega thumbnail local se existir
+        let thumbnailURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("\(video.id).jpg")
+        
+        if FileManager.default.fileExists(atPath: thumbnailURL.path) {
+            thumbnailImageView.image = UIImage(contentsOfFile: thumbnailURL.path)
         } else {
-            thumbnailImageView.image = nil
+            thumbnailImageView.image = UIImage(systemName: "film")
         }
+        
+        // Mostra/Esconde o loading
+        isDownloading ? activityIndicator.startAnimating() : activityIndicator.stopAnimating()
     }
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -71,7 +68,7 @@ class VideoTableViewCell: UITableViewCell {
     private func setupViews() {
         contentView.addSubview(thumbnailImageView)
         contentView.addSubview(titleLabel)
-        contentView.addSubview(durationLabel)
+        contentView.addSubview(activityIndicator)
         
         NSLayoutConstraint.activate([
             thumbnailImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
@@ -83,9 +80,9 @@ class VideoTableViewCell: UITableViewCell {
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
             titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
             
-            durationLabel.leadingAnchor.constraint(equalTo: thumbnailImageView.trailingAnchor, constant: 8),
-            durationLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-            durationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4)
+            activityIndicator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            activityIndicator.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            
         ])
     }
 }
