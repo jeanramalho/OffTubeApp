@@ -58,17 +58,11 @@ Um projeto pessoal desenvolvido de ponta a ponta para resolver um problema real:
 Organização profissional seguindo padrões de mercado:
 
 OffTubeApp/
-
 ├── Controllers/ # Coordenação de fluxos e lifecycle
-
 ├── ViewModels/ # Lógica de negócios e estados reativos
-
 ├── Views/ # Componentes UI reutilizáveis
-
 ├── Models/ # Entidades de dados e DTOs
-
 ├── Service/ # Camada de rede e operações I/O
-
 └── Resources/ # Assets e configurações locais
 
 
