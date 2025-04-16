@@ -8,6 +8,7 @@
 import Foundation
 import AVFoundation
 import AVKit
+import MediaPlayer
 
 class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
     
@@ -24,10 +25,21 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
     var onVideosUpdated: (() -> Void)?
     var onDownloadError: ((String) -> Void)?
     
+    private var audioSessionConfigured = false
+    private var playbackTimeObserver: Any?
+    
     // MARK: - Inicialização
     override init() {
         super.init()
         loadLocalVideos() // Carrega vídeos salvos ao iniciar
+        
+        // Observa notificação de background
+           NotificationCenter.default.addObserver(
+               self,
+               selector: #selector(handleAppDidEnterBackground),
+               name: Notification.Name("AppDidEnterBackground"),
+               object: nil
+           )
     }
     
     // MARK: - Persistencia de metadados
@@ -238,16 +250,38 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
     
     // MARK: - Reprodução
     private var pipController: AVPictureInPictureController?
+    
+    private func configureAudioSession() {
+        guard !audioSessionConfigured else { return }
+        
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+            audioSessionConfigured = true
+        } catch {
+            print("Erro ao configurar sessão de áudio: \(error)")
+        }
+        
+        // Registra para notificações de interrupção
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
 
     func playCurrentVideo() {
         guard currentIndex < videos.count else { return }
         let video = videos[currentIndex]
         
-        // Verifica se já existe URL local
+        // Configura sessão de áudio para permitir reprodução em segundo plano
+        configureAudioSession()
+        
         if let localURL = video.localURL, FileManager.default.fileExists(atPath: localURL.path) {
             print("[DEBUG] Usando vídeo local já baixado: \(localURL.path)")
             
-            // Configura o player e inicia a reprodução
             let player = AVPlayer(url: localURL)
             self.player = player
             
@@ -255,61 +289,63 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
             playerViewController.player = player
             self.playerViewController = playerViewController
             
-            // Configura o PiP se suportado
+            // Configuração do PiP
             if AVPictureInPictureController.isPictureInPictureSupported(),
-               let playerLayer = playerViewController.view.layer as? AVPlayerLayer { // Correção aqui
+               let playerLayer = playerViewController.view.layer as? AVPlayerLayer {
                 playerViewController.allowsPictureInPicturePlayback = true
                 pipController = AVPictureInPictureController(playerLayer: playerLayer)
                 pipController?.delegate = self
             }
             
+            // Configura controles da tela bloqueada
+            setupNowPlayingInfo(for: video)
+            setupRemoteTransportControls()
+            startPlaybackTimeObserver()
+            
             NotificationCenter.default.post(name: Notification.Name("ReadyToPlayVideo"), object: self)
             player.play()
             
         } else {
-            // Se não existe local, faz o download
             guard let downloadURL = URL(string: video.remoteURL) else {
                 print("[ERRO] URL inválida para reprodução: \(video.remoteURL)")
                 return
             }
             
-            print("[DEBUG] Iniciando download do arquivo para reprodução: \(downloadURL.absoluteString)")
+            print("[DEBUG] Iniciando download para reprodução: \(downloadURL.absoluteString)")
             
             let task = URLSession.shared.downloadTask(with: downloadURL) { [weak self] tempLocalURL, _, error in
+                guard let self = self else { return }
+                
+                // Tratamento de erro
                 if let error = error {
-                    print("Erro no download do vídeo para reprodução: \(error)")
+                    print("Erro no download: \(error)")
                     DispatchQueue.main.async {
-                        self?.onDownloadError?("Erro ao baixar vídeo: \(error.localizedDescription)")
+                        self.onDownloadError?("Erro ao baixar vídeo: \(error.localizedDescription)")
                     }
                     return
                 }
                 
-                guard let tempLocalURL = tempLocalURL else {
-                    print("URL temporária inválida para reprodução")
-                    return
-                }
-                
                 do {
-                    // Salva vídeo no diretório local antes de tocar
                     let documentsDirectory = try FileManager.default.url(for: .documentDirectory,
                                                                          in: .userDomainMask,
                                                                          appropriateFor: nil,
                                                                          create: true)
-                    let fileName = "\(video.id).mp4" // Nome fixo para evitar duplicatas
-                    let localURL = documentsDirectory.appendingPathComponent(fileName)
+                    let localURL = documentsDirectory.appendingPathComponent("\(video.id).mp4")
                     
                     if FileManager.default.fileExists(atPath: localURL.path) {
                         try FileManager.default.removeItem(at: localURL)
                     }
                     
-                    try FileManager.default.moveItem(at: tempLocalURL, to: localURL)
-                    print("Vídeo para reprodução salvo localmente em: \(localURL.path)")
+                    try FileManager.default.moveItem(at: tempLocalURL!, to: localURL)
                     
-                    DispatchQueue.main.async { [weak self] in // Adicione [weak self] in
+                    DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
+                        
+                        // Atualiza estado local
                         self.videos[self.currentIndex].localURL = localURL
                         self.saveMetadata()
                         
+                        // Configura player
                         let player = AVPlayer(url: localURL)
                         self.player = player
                         
@@ -317,7 +353,11 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
                         playerViewController.player = player
                         self.playerViewController = playerViewController
                         
-                        // Configura o PiP se suportado
+                        // Configura controles
+                        self.setupNowPlayingInfo(for: video)
+                        self.setupRemoteTransportControls()
+                        
+                        // Habilita PiP
                         if AVPictureInPictureController.isPictureInPictureSupported(),
                            let playerLayer = playerViewController.view.layer as? AVPlayerLayer {
                             playerViewController.allowsPictureInPicturePlayback = true
@@ -329,24 +369,195 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
                         player.play()
                     }
                 } catch {
-                    print("Erro ao salvar vídeo localmente para reprodução: \(error)")
+                    print("Erro ao salvar vídeo: \(error)")
                     DispatchQueue.main.async {
-                        self?.onDownloadError?("Erro ao salvar vídeo: \(error.localizedDescription)")
+                        self.onDownloadError?("Erro ao salvar vídeo: \(error.localizedDescription)")
                     }
                 }
             }
             task.resume()
         }
     }
+    
+    // MARK: - Lock Screen Controls
+    // Método completo para configurar informações de reprodução
+    private func setupNowPlayingInfo(for video: Video) {
+        guard let player = player else { return }
+        
+        let nowPlayingInfoCenter = MPNowPlayingInfoCenter.default()
+        var nowPlayingInfo = [String: Any]()
+        
+        // Informações básicas sobre o vídeo
+        nowPlayingInfo[MPMediaItemPropertyTitle] = video.title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = "OffTubeApp"
+        
+        // Duração total do vídeo
+        if let duration = player.currentItem?.asset.duration.seconds, duration.isFinite {
+            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+        }
+        
+        // Taxa de reprodução (1.0 = velocidade normal)
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
+        
+        // Posição atual de reprodução
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player.currentTime().seconds
+        
+        // Tenta adicionar uma imagem de capa (thumbnail)
+        let thumbnailPath = getLocalThumbnailPath(for: video.id)
+        if let thumbnailData = try? Data(contentsOf: thumbnailPath),
+           let thumbnail = UIImage(data: thumbnailData) {
+            let artwork = MPMediaItemArtwork(boundsSize: thumbnail.size) { _ in thumbnail }
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+        }
+        
+        // Aplica as informações
+        nowPlayingInfoCenter.nowPlayingInfo = nowPlayingInfo
+        
+        // Ativa eventos de controle remoto
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+    }
+
+    // Método para configurar controles remotos
+    private func setupRemoteTransportControls() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        
+        // Remove handlers anteriores para evitar duplicação
+        [commandCenter.playCommand, commandCenter.pauseCommand,
+         commandCenter.nextTrackCommand, commandCenter.previousTrackCommand,
+         commandCenter.changePlaybackPositionCommand].forEach {
+            $0.removeTarget(nil)
+        }
+        
+        // Comando de reprodução
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.resumePlayback()
+            return .success
+        }
+        
+        // Comando de pausa
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.pausePlayback()
+            return .success
+        }
+        
+        // Próximo vídeo
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self = self, self.currentIndex + 1 < self.videos.count else {
+                return .noSuchContent
+            }
+            self.nextVideo()
+            return .success
+        }
+        
+        // Vídeo anterior
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self = self, self.currentIndex > 0 else {
+                return .noSuchContent
+            }
+            self.previousVideo()
+            return .success
+        }
+        
+        // Controle deslizante de progresso
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self = self,
+                  let player = self.player,
+                  let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            
+            let time = CMTime(seconds: positionEvent.positionTime, preferredTimescale: 600)
+            player.seek(to: time)
+            self.updateNowPlayingTimeInfo()
+            return .success
+        }
+        
+        // Habilita todos os comandos
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = (currentIndex + 1 < videos.count)
+        commandCenter.previousTrackCommand.isEnabled = (currentIndex > 0)
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+    }
+
+    // Observador de tempo para atualizar a barra de progresso na tela bloqueada
+    private func startPlaybackTimeObserver() {
+        // Remove observador anterior se existir
+        if let observer = playbackTimeObserver {
+            player?.removeTimeObserver(observer)
+            playbackTimeObserver = nil
+        }
+        
+        // Cria novo observador que atualiza a cada 1 segundo
+        playbackTimeObserver = player?.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 1, preferredTimescale: 1),
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateNowPlayingTimeInfo()
+        }
+    }
+
+    // Método para atualizar informações de tempo na tela bloqueada
+    private func updateNowPlayingTimeInfo() {
+        guard let player = player,
+              var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo else {
+            return
+        }
+        
+        // Atualiza tempo decorrido e taxa de reprodução
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player.currentTime().seconds
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+
+
+    // Atualiza o tempo decorrido periodicamente
+    private func updatePlaybackProgress() {
+        guard let player = player else { return }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] =
+            player.currentTime().seconds
+    }
+    
+    // Manipulador de interrupções de áudio (chamadas telefônicas, etc.)
+    @objc private func handleAudioSessionInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        switch type {
+        case .began:
+            // Interrupção começou - pausa o vídeo
+            pausePlayback()
+        case .ended:
+            // Interrupção terminou - verifica se deve retomar a reprodução
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    resumePlayback()
+                }
+            }
+        @unknown default:
+            break
+        }
+    }
+
 
     
     // MARK: - Controles de Reprodução
     func pausePlayback() {
         player?.pause()
+        updateNowPlayingTimeInfo()
     }
 
     func resumePlayback() {
         player?.play()
+        updateNowPlayingTimeInfo()
     }
 
     func nextVideo() {
@@ -360,6 +571,7 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
         currentIndex -= 1
         playCurrentVideo()
     }
+
     
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("PiP iniciado")
@@ -368,6 +580,76 @@ class VideoListViewModel: NSObject, AVPictureInPictureControllerDelegate {
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("PiP finalizado")
     }
+    
+    private func setupNowPlayingInfo() {
+        let nowPlayingInfoCenter = MPNowPlayingInfoCenter.default()
+        var nowPlayingInfo = [String: Any]()
+        
+        // Configura informações básicas
+        nowPlayingInfo[MPMediaItemPropertyTitle] = videos[currentIndex].title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = "OffTubeApp"
+        
+        // Configura tempo de reprodução
+        let duration = player?.currentItem?.asset.duration.seconds ?? 0
+        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player?.currentTime().seconds
+        
+        // Atualiza a tela bloqueada
+        nowPlayingInfoCenter.nowPlayingInfo = nowPlayingInfo
+    }
+    
+    // Método para limpar recursos quando não estiver mais reproduzindo
+    func stopPlayback() {
+        // Remove o observador de tempo
+        if let observer = playbackTimeObserver {
+            player?.removeTimeObserver(observer)
+            playbackTimeObserver = nil
+        }
+        
+        // Para o player
+        player?.pause()
+        player = nil
+        
+        // Limpa informações da tela de bloqueio
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        
+        // Desativa eventos de controle remoto
+        UIApplication.shared.endReceivingRemoteControlEvents()
+    }
+
+    // método para detectar quando o app entra em background
+    func applicationDidEnterBackground() {
+        // Assegura que tudo está configurado para reprodução em background
+        configureAudioSession()
+        
+        // Atualiza informações da tela bloqueada
+        if let video = currentIndex < videos.count ? videos[currentIndex] : nil {
+            setupNowPlayingInfo(for: video)
+        }
+    }
+    
+    // MARK: - desregistro do observador no deinit
+    deinit {
+        // Remove observadores de tempo
+        if let observer = playbackTimeObserver {
+            player?.removeTimeObserver(observer)
+        }
+        
+        // Remove observadores de notificação
+        NotificationCenter.default.removeObserver(self)
+        
+        // Desativa sessão de áudio se necessário
+        do {
+            try AVAudioSession.sharedInstance().setActive(false)
+        } catch {
+            print("Erro ao desativar sessão de áudio: \(error)")
+        }
+    }
+    
+    @objc private func handleAppDidEnterBackground() {
+        applicationDidEnterBackground()
+    }
+    
 
 }
 
