@@ -8,7 +8,9 @@
 
 ## 🌟 Visão Geral
 
-**OffTubeApp** é uma solução profissional para gerenciamento de conteúdo multimídia offline, desenvolvida para demonstrar expertise em desenvolvimento iOS de alto nível. Combina técnicas avançadas de engenharia de software com uma experiência de usuário premium, oferecendo:
+O **OffTubeApp** é um aplicativo iOS nativo desenvolvido com foco na performance, experiência do usuário e boas práticas de arquitetura. Ele permite baixar vídeos do YouTube diretamente para o dispositivo, exibí-los em uma interface fluida baseada em UITableView, tocar áudio em segundo plano e manter a execução com a tela bloqueada. O app ainda oferece funcionalidades de compartilhamento e remoção de vídeos, com uma interface simples, direta e eficiente.
+
+Um projeto pessoal desenvolvido de ponta a ponta para resolver um problema real: ouvir vídeos e podcasts do YouTube com liberdade, mesmo com a tela bloqueada, com foco em performance e experiência nativa.
 
 - Download persistente de vídeos com gestão inteligente de recursos
 - Player nativo integrado com recursos profissionais
@@ -16,9 +18,10 @@
 - Conformidade total com as diretrizes de mídia do iOS
 
 <p align="center">
-  <img src="https://via.placeholder.com/150x320/008080/FFFFFF?text=Lista+de+V%C3%ADdeos" width="150" />
-  <img src="https://via.placeholder.com/150x320/008080/FFFFFF?text=Player+PiP" width="150" />
-  <img src="https://via.placeholder.com/150x320/008080/FFFFFF?text=Gerenciamento" width="150" />
+  <img src="https://github.com/user-attachments/assets/0978ce3a-b614-4287-a495-1e2c4fd2e82f" width="150" />
+  <img src="https://github.com/user-attachments/assets/79973c8c-ce03-487d-abb6-e05edb9da947" width="150" />
+  <img src="https://github.com/user-attachments/assets/894a6624-e334-4acf-bfbf-0610de5b1fbb" width="150" />
+  <img src="https://github.com/user-attachments/assets/ccb5913d-1cdc-4ec5-be9d-b9a101a9fb2f" width="150" />
 </p>
 
 ## 🚀 Funcionalidades Principais
@@ -55,11 +58,17 @@
 Organização profissional seguindo padrões de mercado:
 
 OffTubeApp/
+
 ├── Controllers/ # Coordenação de fluxos e lifecycle
+
 ├── ViewModels/ # Lógica de negócios e estados reativos
+
 ├── Views/ # Componentes UI reutilizáveis
+
 ├── Models/ # Entidades de dados e DTOs
+
 ├── Service/ # Camada de rede e operações I/O
+
 └── Resources/ # Assets e configurações locais
 
 
